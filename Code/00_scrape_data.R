@@ -1,5 +1,5 @@
 # Set working directory
-setwd("~/Dropbox/GS/Research/Sports/Baseball/Relief-Fatigue")
+# setwd("~/Dropbox/GS/Research/Sports/Baseball/Relief-Fatigue")
 
 # Load Packages
 list.of.packages <- c("pitchRx","RSQLite", "dplyr")
