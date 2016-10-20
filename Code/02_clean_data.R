@@ -99,22 +99,29 @@ whiff <- c("Swinging Strike", "Swinging Strike (Blocked)")
 pitch.relief.all$swinging <- as.numeric(pitch.relief.all$des %in% swinging)
 pitch.relief.all$whiff <- as.numeric(pitch.relief.all$des %in% whiff)
 
-pitch.relief.swing <- pitch.relief.all %>%
+# Only include common pitches
+keep.pitches <- c("CH", "CU", "FC", "FF", "FS", "FT", "KC", "SI", "SL")
+pitches.kept <- pitch.relief.all %>%
+  filter(pitch_type %in% keep.pitches)
+
+
+# This is the dataset where we estimate for each pitch
+save(pitches.kept, file = "AllStandardPitches.Rdata")
+
+
+
+pitch.swing <- pitches.kept %>%
   filter(swinging == 1)
 
 # Remove In-Play Bunts
 inplay <- c("In play, no out", "In play, run(s)")
 bunt.events <- c("Bunt Lineout", "Bunt Popout", "Bunt Groundout", "Sac Bunt",
                  "Sacrifice Bunt DP")
-pitch.relief.swing <- pitch.relief.swing %>%
+pitch.swing <- pitch.swing %>%
   filter(!(des %in% inplay & event %in% bunt.events))
 
-# Only include common pitches
-keep.pitches <- c("CH", "CU", "FC", "FF", "FS", "FT", "KC", "SI", "SL")
-pitch.relief.swing <- pitch.relief.swing %>%
-  filter(pitch_type %in% keep.pitches)
-
-save(pitch.relief.swing, file = "Data/SwingingData.Rdata")
+# Dataset with only full swings- used to model whiff rates
+save(pitch.swing, file = "Data/Swings.Rdata")
 
 
 
