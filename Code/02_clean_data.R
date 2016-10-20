@@ -105,8 +105,8 @@ pitches.kept <- pitch.relief.all %>%
   filter(pitch_type %in% keep.pitches)
 
 
-# This is the dataset where we estimate for each pitch
-save(pitches.kept, file = "AllStandardPitches.Rdata")
+# This is the dataset where we estimate nastiness of each pitch
+save(pitches.kept, file = "Data/AllStandardPitches.Rdata")
 
 
 
