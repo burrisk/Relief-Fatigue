@@ -66,7 +66,9 @@ pitch.split <- lapply(1:length(studied.years), function(i){
 pitch.relief.all <- do.call(rbind, pitch.split)
 rm(list=setdiff(ls(), "pitch.relief.all"))
 
-# TODO (Jake) Take the dataset pitch.relief.all and get npitch1:npitch7 for each pitcher and date
+
+# TODO (Jake) Take the dataset pitch.relief.all and get npitch1:npitch7 for each pitcher 
+# and date.  Only include relievers who throw more than 100 pitches in a given year
 
 
 
@@ -74,6 +76,20 @@ rm(list=setdiff(ls(), "pitch.relief.all"))
 
 
 # 
+
+# Find fastest average pitch for each reliever in a given year
+fastest.pitch.dat <- pitch.relief.all %>%
+  filter(!is.na(start_speed)) %>%
+  filter(!(pitch_type %in% c("PO", "AB", "EP", "SC", "UN", "FO"))) %>%
+  group_by(pitcher, year, pitch_type) %>%
+  filter(n() >= 3) %>%
+  summarise(avg_fast_speed = mean(start_speed)) %>%
+  arrange(desc(avg_fast_speed)) %>%
+  filter(row_number() == 1) %>%
+  dplyr::select(-pitch_type)
+
+pitch.relief.all <- inner_join(pitch.relief.all, fastest.pitch.dat, by = 
+                                     c("pitcher", "year"))
 
 # Create Swing and Whiff Indicators
 swinging <- c("In play, no out", "Foul", "In play, run(s)", "Swinging Strike", 'Foul Tip',
@@ -99,5 +115,6 @@ pitch.relief.swing <- pitch.relief.swing %>%
   filter(pitch_type %in% keep.pitches)
 
 save(pitch.relief.swing, file = "Data/SwingingData.Rdata")
+
 
 
