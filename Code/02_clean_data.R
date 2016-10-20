@@ -26,15 +26,54 @@ rownames(mlb.schedule) <- years
 
 # Define which pitches are in regular season and postseason games
 y <- format(pitch$date, "%Y")
-pitch$reg_season <- as.numeric(pitch$date >= mlb.schedule[y,"start"]) & (pitch$date <= mlb.schedule[y,"end"])
+pitch$reg_season <- as.numeric(pitch$date >= mlb.schedule[y,"start"]) & 
+  (pitch$date <= mlb.schedule[y,"end"])
 pitch$post_season <- as.numeric(pitch$date > mlb.schedule[y,"end"])
 pitch$year <- y
 
 # Exclude Spring Training games and Years not in Study
 studied.years <- c(2012:2016)
-pitch_cleaner <- pitch %>%
+pitch <- pitch %>%
   filter(reg_season + post_season != 0) %>%
   filter(as.numeric(year) %in% studied.years)
-  
+
+# Create Balls and Strikes Variables
+pitch$b <- substr(pitch$count, 1, 1)
+pitch$s <- substr(pitch$count, 3, 3)
+
+# Remove years for pitchers who had greater than two starts
+max.starts <- 2
+starters.dat <- pitch %>%
+  filter(!is.na(sv_id)) %>%
+  group_by(gameday_link) %>%
+  arrange(sv_id) %>%
+  filter(row_number() == 1) %>%
+  dplyr::select(gameday_link, pitcher, year)
+
+starts.year.dat <- starters.dat %>%
+  group_by(pitcher, year) %>%
+  summarise(n_starts = n()) %>%
+  filter(n_starts > max.starts)
+
+pitch.split <- split(pitch, pitch$year)
+pitcher.exclude.split <- split(starts.year.dat, starts.year.dat$year)
+pitch.split <- lapply(1:length(studied.years), function(i){
+  exclude.vec <- pitcher.exclude.split[[i]]$pitcher
+  pitch.split[[i]] %>%
+    filter(!(pitcher %in% exclude.vec))
+})
+
+pitch.relief.all <- do.call(rbind, pitch.split)
+rm(list=setdiff(ls(), "pitch.relief.all"))
+
+# TODO (Jake) Take the dataset pitch.relief.all and get npitch1:npitch7 for each pitcher and date
+
+
+
+
+
+
+# 
+
 
 
