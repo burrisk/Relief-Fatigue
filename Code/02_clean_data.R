@@ -42,7 +42,7 @@ pitch$b <- substr(pitch$count, 1, 1)
 pitch$s <- substr(pitch$count, 3, 3)
 
 # Remove years for pitchers who had greater than two starts
-max.starts <- 2
+max.starts <- 0
 starters.dat <- pitch %>%
   filter(!is.na(sv_id)) %>%
   group_by(gameday_link) %>%
@@ -75,5 +75,29 @@ rm(list=setdiff(ls(), "pitch.relief.all"))
 
 # 
 
+# Create Swing and Whiff Indicators
+swinging <- c("In play, no out", "Foul", "In play, run(s)", "Swinging Strike", 'Foul Tip',
+              "Foul (Runner Going)", "Swinging Strike (Blocked)")
+whiff <- c("Swinging Strike", "Swinging Strike (Blocked)")
+
+pitch.relief.all$swinging <- as.numeric(pitch.relief.all$des %in% swinging)
+pitch.relief.all$whiff <- as.numeric(pitch.relief.all$des %in% whiff)
+
+pitch.relief.swing <- pitch.relief.all %>%
+  filter(swinging == 1)
+
+# Remove In-Play Bunts
+inplay <- c("In play, no out", "In play, run(s)")
+bunt.events <- c("Bunt Lineout", "Bunt Popout", "Bunt Groundout", "Sac Bunt",
+                 "Sacrifice Bunt DP")
+pitch.relief.swing <- pitch.relief.swing %>%
+  filter(!(des %in% inplay & event %in% bunt.events))
+
+# Only include common pitches
+keep.pitches <- c("CH", "CU", "FC", "FF", "FS", "FT", "KC", "SI", "SL")
+pitch.relief.swing <- pitch.relief.swing %>%
+  filter(pitch_type %in% keep.pitches)
+
+save(pitch.relief.swing, file = "Data/SwingingData.Rdata")
 
 
