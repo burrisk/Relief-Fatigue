@@ -71,9 +71,46 @@ rm(list=setdiff(ls(), "pitch.relief.all"))
 # and date.  Only include relievers who throw more than 100 pitches in a given year
 
 
+kSecondsInDay = 24*3600
+kPitchCutoff = 100
+kLookbackDays = 7
+
+#Get a dataset with row for each pitcher/game for num.pitches
+player.game = pitch.relief.all %>%
+  group_by(date, gameday_link,pitcher, pitcher_name) %>%
+  summarise(num.pitches = n())%>%
+  mutate(num.date = as.numeric(strptime(date, format = "%Y-%m-%d"))/kSecondsInDay,
+         year = substr(date,1,4))
+
+#Only relievers who threw 100 pitches in a given year
+valid.pitcher <- pitch.relief.all %>%
+  group_by(pitcher,year) %>%
+  summarise(tot.pitches = n()) %>%
+  filter(tot.pitches >= kPitchCutoff) %>%
+  select(-tot.pitches) %>%
+  inner_join(player.game)
 
 
 
+#Dataset for num.pitches thrown in last 7 days
+npitch = matrix(0, nrow = nrow(valid.pitcher), ncol = kLookbackDays)
+colnames(npitch) = paste0("npitch",1:kLookbackDays)
+for(i in 1:nrow(valid.pitcher)){
+  for(j in 1:kLookbackDays){
+    index = ifelse((i-j)>0, i-j, NA) 
+    if(!is.na(index) && #is lookback valid
+       (valid.pitcher$pitcher[i] == valid.pitcher$pitcher[(i-j)]) && #same pitcher?
+       (valid.pitcher$num.date[i] - valid.pitcher$num.date[(i-j)] <= kLookbackDays)){ #within a week?
+      d = (valid.pitcher$num.date[i] - valid.pitcher$num.date[i-j]) #which day in late 7
+      npitch[i,d] = valid.pitcher$num.pitches[i-j]
+    }
+  }
+}
+
+relief.lookback <- as.data.frame(cbind(valid.pitcher,npitch)) %>%
+  select(-num.date)
+
+rm(valid.pitcher,npitch,player.game,d,i,index,j)
 
 # 
 
