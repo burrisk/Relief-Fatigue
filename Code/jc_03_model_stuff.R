@@ -1,8 +1,10 @@
 library(dplyr)
 library(pscl)
+library(ROCR)
+library(rms)
 setwd("~/Documents/Relief-Fatigue")
 
-load(file ="Data/AllPitches.Rdata")
+load(file ="Data/AllStandardPitches.Rdata")
 
 ########
 #Extra code to get the right dataset
@@ -93,33 +95,41 @@ test.mod <- function(covars,ds,k,prob.threshold=0.5){
 
   folds <- get.folds(ds,k)
   results <- lapply(folds,function(x){
-    
     #Divide up the dataset
     train.ds = ds[-x,]
     test.ds = ds[x,]
     
     #Get the model
     mod.string = paste0("whiff~",paste(covars,collapse="+"))
-    mod <- glm(as.formula(mod.string),data = train.ds)
+    mod <- glm(as.formula(mod.string),data = train.ds, family = "binomial")
     
     base.mod <- glm(whiff~1,data = train.ds)
+    base.probs <- predict(base.mod, test.ds, type = "response")
     
     #Predicted probabilities
-    logit.probs = predict(mod,test.ds,type = "link")
-    probs = 1/(1+exp(-logit.probs))
+    logit.probs <- predict(mod,test.ds,type = "response")
     
-    #Predicted valus
-    pred = (probs > prob.threshold) + 0
+    #Predicted values
+    prob <- prediction(logit.probs, test.ds$whiff)
+    tprfpr <- performance(prob, "tpr", "fpr")
+    auc <- performance(prob, "auc")
+    tpr <- unlist(slot(tprfpr, "y.values"))
+    fpr <- unlist(slot(tprfpr, "x.values"))
+    roc <- data.frame(tpr, fpr)
+#     ggplot(roc) + geom_line(aes(x = fpr, y = tpr)) + 
+#       geom_abline(intercept = 0, slope = 1, colour = "gray") + 
+#       ylab("Sensitivity") + 
+#       xlab("1 - Specificity")
+    
+    pred = (logit.probs > prob.threshold) + 0
     
     #Comparison vector
     #1 = false positive
     #-1 = false negative
     #0 = true positive & negative
     comp = pred - test.ds$whiff
-    out_vec = c("False Pos" = sum(comp==1)/length(comp),
-                "False Neg" = sum(comp==-1)/length(comp),
-                "True" = sum(comp==0)/length(comp),
-                "Pseudo R^2" = pR2(mod)['McFadden'])
+    out_vec = c("Area Under ROC" = unlist(slot(auc,"y.values")))#,
+              #  "Pseudo R^2" = pR2(mod)['McFadden'])
     return(out_vec)
   } )
   results.mat <- do.call(rbind,results)
@@ -135,7 +145,7 @@ ff <- pitch.swing %>%
   mutate(pfx_x = abs(pfx_x))
 ff$zone <- as.factor(ff$zone)
 
-covars <- c("start_speed","pfx_x","pfx_z","spin_rate","zone","ax","ay","az")
+covars <- c("start_speed","pfx_x","pfx_z","spin_rate","ax","ay","az","pfx_x*pfx_z","ax*az")
 
 #Ok this doesn't work well at all, but I think I'm doing the right thing
 #I think the model with the few covariates just has no predictive power
@@ -147,3 +157,10 @@ covars <- c("start_speed","pfx_x","pfx_z","spin_rate","zone","ax","ay","az")
 #Also could get log likelihood ratio between ours and intercept
 
 
+# Zone Visualization
+zones <- ff %>%
+  group_by(zone) %>%
+  summarise(m_x = mean(px), m_z = mean(pz))
+
+ggplot(zones, aes(x = m_x, y = m_z, colour = zone)) + 
+  geom_point()

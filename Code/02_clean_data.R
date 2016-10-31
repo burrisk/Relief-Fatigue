@@ -41,7 +41,57 @@ pitch <- pitch %>%
 pitch$b <- substr(pitch$count, 1, 1)
 pitch$s <- substr(pitch$count, 3, 3)
 
-# Remove years for pitchers who had greater than two starts
+#### Create dataset of swings and misses---to be used in 03_model_stuff.R
+
+# Find fastest average pitch for each pitcher in a given year
+fastest.pitch.dat <- pitch %>%
+  filter(!is.na(start_speed)) %>%
+  filter(!(pitch_type %in% c("PO", "AB", "EP", "SC", "UN", "FO"))) %>%
+  group_by(pitcher, year, pitch_type) %>%
+  filter(n() >= 10) %>%
+  summarise(avg_fast_speed = mean(start_speed)) %>%
+  arrange(desc(avg_fast_speed)) %>%
+  filter(row_number() == 1) %>%
+  dplyr::select(-pitch_type)
+
+pitch <- inner_join(pitch, fastest.pitch.dat, by = 
+                                 c("pitcher", "year"))
+
+# Create Swing and Whiff Indicators
+swinging <- c("In play, no out", "Foul", "In play, run(s)", "Swinging Strike", 'Foul Tip',
+              "Foul (Runner Going)", "Swinging Strike (Blocked)")
+whiff <- c("Swinging Strike", "Swinging Strike (Blocked)")
+
+pitch$swinging <- as.numeric(pitch$des %in% swinging)
+pitch$whiff <- as.numeric(pitch$des %in% whiff)
+
+# Only include common pitches
+keep.pitches <- c("CH", "CU", "FC", "FF", "FS", "FT", "KC", "SI", "SL")
+pitches.kept <- pitch %>%
+  filter(pitch_type %in% keep.pitches)
+
+
+# This is the dataset where we estimate nastiness of each pitch
+save(pitches.kept, file = "Data/AllStandardPitches.Rdata")
+
+
+
+pitch.swing <- pitches.kept %>%
+  filter(swinging == 1)
+
+# Remove In-Play Bunts
+inplay <- c("In play, no out", "In play, run(s)")
+bunt.events <- c("Bunt Lineout", "Bunt Popout", "Bunt Groundout", "Sac Bunt",
+                 "Sacrifice Bunt DP")
+pitch.swing <- pitch.swing %>%
+  filter(!(des %in% inplay & event %in% bunt.events))
+
+# Dataset with only full swings- used to model whiff rates
+save(pitch.swing, file = "Data/Swings.Rdata")
+
+####### Extract only relievers from the data
+
+# Remove years for pitchers who had greater than 0 starts
 max.starts <- 0
 starters.dat <- pitch %>%
   filter(!is.na(sv_id)) %>%
@@ -114,51 +164,7 @@ rm(valid.pitcher,npitch,player.game,d,i,index,j)
 
 # 
 
-# Find fastest average pitch for each reliever in a given year
-fastest.pitch.dat <- pitch.relief.all %>%
-  filter(!is.na(start_speed)) %>%
-  filter(!(pitch_type %in% c("PO", "AB", "EP", "SC", "UN", "FO"))) %>%
-  group_by(pitcher, year, pitch_type) %>%
-  filter(n() >= 3) %>%
-  summarise(avg_fast_speed = mean(start_speed)) %>%
-  arrange(desc(avg_fast_speed)) %>%
-  filter(row_number() == 1) %>%
-  dplyr::select(-pitch_type)
 
-pitch.relief.all <- inner_join(pitch.relief.all, fastest.pitch.dat, by = 
-                                     c("pitcher", "year"))
-
-# Create Swing and Whiff Indicators
-swinging <- c("In play, no out", "Foul", "In play, run(s)", "Swinging Strike", 'Foul Tip',
-              "Foul (Runner Going)", "Swinging Strike (Blocked)")
-whiff <- c("Swinging Strike", "Swinging Strike (Blocked)")
-
-pitch.relief.all$swinging <- as.numeric(pitch.relief.all$des %in% swinging)
-pitch.relief.all$whiff <- as.numeric(pitch.relief.all$des %in% whiff)
-
-# Only include common pitches
-keep.pitches <- c("CH", "CU", "FC", "FF", "FS", "FT", "KC", "SI", "SL")
-pitches.kept <- pitch.relief.all %>%
-  filter(pitch_type %in% keep.pitches)
-
-
-# This is the dataset where we estimate nastiness of each pitch
-save(pitches.kept, file = "Data/AllStandardPitches.Rdata")
-
-
-
-pitch.swing <- pitches.kept %>%
-  filter(swinging == 1)
-
-# Remove In-Play Bunts
-inplay <- c("In play, no out", "In play, run(s)")
-bunt.events <- c("Bunt Lineout", "Bunt Popout", "Bunt Groundout", "Sac Bunt",
-                 "Sacrifice Bunt DP")
-pitch.swing <- pitch.swing %>%
-  filter(!(des %in% inplay & event %in% bunt.events))
-
-# Dataset with only full swings- used to model whiff rates
-save(pitch.swing, file = "Data/Swings.Rdata")
 
 
 

@@ -12,9 +12,11 @@ if(length(new.packages)) install.packages(new.packages,
 library(dplyr)
 library(LaplacesDemon)
 
-pitch.swing$start_speed2 <- pitch.swing$start_speed^2
-pitches.kept$start_speed2 <- pitches.kept$start_speed^2
+# Covariates to include in the model
+covars <- c("poly(start_speed,2)", "spin_rate", "abs(pfx_x)*pfx_z",
+            "ax*ay*az")
 
+model.formula <- as.formula(paste0("whiff~", paste(covars, collapse = "+")))
 
 # Four Seam Fastballs (Exploratory)
 four.seam.swing <- pitch.swing %>%
@@ -22,8 +24,7 @@ four.seam.swing <- pitch.swing %>%
 four.seam.all <- pitches.kept %>%
   filter(pitch_type == "FF")
 
-glm.four.seam <- glm(whiff ~ start_speed2 + start_speed*pfx_z + abs(pfx_x) +
-                       pfx_z + start_speed*abs(pfx_x) + factor(s), data = four.seam.swing, 
+glm.four.seam <- glm(model.formula, data = four.seam.swing, 
                      family = "binomial")
 
 summary(glm.four.seam)
@@ -40,12 +41,11 @@ four.seam.stuff <- four.seam.all %>%
 # Two-Seam Fastballs
 
 two.seam.swing <- pitch.swing %>%
-  filter(pitch_type == "FT")
+  filter(pitch_type == "SL")
 two.seam.all <- pitches.kept %>%
-  filter(pitch_type == "FT")
+  filter(pitch_type == "SL")
 
-glm.two.seam <- glm(whiff ~ start_speed2 + start_speed*pfx_z + abs(pfx_x) +
-                       pfx_z + factor(s) + start_speed*abs(pfx_x), data = two.seam.swing, 
+glm.two.seam <- glm(model.formula, data = two.seam.swing, 
                      family = "binomial")
 
 summary(glm.two.seam)
@@ -61,16 +61,16 @@ two.seam.stuff <- two.seam.all %>%
 
 # Curveballs
 curveball.swing <- pitch.swing %>%
-  filter(pitch_type == "SI" | pitch_type == "SL")
+  filter(pitch_type == "CU" | pitch_type == "KC")
 curveball.all <- pitches.kept %>%
-  filter(pitch_type == "SI" | pitch_type == "SL")
+  filter(pitch_type == "KC" | pitch_type == "CU")
 
-glm.curveball <- glm(whiff ~ start_speed2 + start_speed*pfx_z + abs(pfx_x) +
-                      pfx_z + factor(s) + start_speed*abs(pfx_x), data = curveball.swing,
+glm.curveball <- glm(model.formula, data = curveball.swing,
                      family = "binomial")
 
 summary(glm.curveball)
-
+test.mod(c("spin_rate", "start_speed*abs(pfx_x)*pfx_z",
+                     "ax*ay*az"),curveball.swing,5,prob.threshold = .5)
 
 curveball.all$nasty <- as.numeric(scale(logit(predict(glm.curveball, curveball.all,
                                                      type = "response"))))
