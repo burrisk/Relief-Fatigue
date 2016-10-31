@@ -1,4 +1,5 @@
 library(dplyr)
+library(pscl)
 setwd("~/Documents/Relief-Fatigue")
 
 load(file ="Data/AllPitches.Rdata")
@@ -82,8 +83,14 @@ get.folds <- function(ds,k){
   return(folds)
 }
 
+
 #Given model to test, assignment prob, calculate avg FP, FN across folds
-test.mod <- function(covars,ds,k){
+test.mod <- function(covars,ds,k,prob.threshold=0.5){
+  #covars is string vector of covariates
+  #ds is dataset
+  #k is number of folds
+  #prob.threshold is the rule for predicting 1
+
   folds <- get.folds(ds,k)
   results <- lapply(folds,function(x){
     
@@ -95,11 +102,14 @@ test.mod <- function(covars,ds,k){
     mod.string = paste0("whiff~",paste(covars,collapse="+"))
     mod <- glm(as.formula(mod.string),data = train.ds)
     
+    base.mod <- glm(whiff~1,data = train.ds)
+    
     #Predicted probabilities
-    probs = predict.glm(mod,newdata=test.ds)
+    logit.probs = predict(mod,test.ds,type = "link")
+    probs = 1/(1+exp(-logit.probs))
     
     #Predicted valus
-    pred = rbinom(n=length(probs),size=1,prob = probs)
+    pred = (probs > prob.threshold) + 0
     
     #Comparison vector
     #1 = false positive
@@ -108,7 +118,8 @@ test.mod <- function(covars,ds,k){
     comp = pred - test.ds$whiff
     out_vec = c("False Pos" = sum(comp==1)/length(comp),
                 "False Neg" = sum(comp==-1)/length(comp),
-                "True" = sum(comp==0)/length(comp))
+                "True" = sum(comp==0)/length(comp),
+                "Pseudo R^2" = pR2(mod)['McFadden'])
     return(out_vec)
   } )
   results.mat <- do.call(rbind,results)
@@ -118,11 +129,21 @@ test.mod <- function(covars,ds,k){
   
   return(avg.results)
 }
+
 ff <- pitch.swing %>%
-  filter(pitch_type =="FF") 
+  filter(pitch_type =="FF") %>%
+  mutate(pfx_x = abs(pfx_x))
+ff$zone <- as.factor(ff$zone)
 
-covars <- c("start_speed","pfx_x","pfx_z","spin_rate")
+covars <- c("start_speed","pfx_x","pfx_z","spin_rate","zone","ax","ay","az")
 
-tester = test.mod(covars,ff,5)
+#Ok this doesn't work well at all, but I think I'm doing the right thing
+#I think the model with the few covariates just has no predictive power
+#Right now guesses everything to be a swing and miss?
+(tester = test.mod(covars,ff,5,prob.threshold = .5))
+
+#Need to also add some model validation tools
+#McFaddden's pseudo r-squared in there
+#Also could get log likelihood ratio between ours and intercept
 
 
