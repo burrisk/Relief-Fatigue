@@ -41,7 +41,32 @@ pitch <- pitch %>%
 pitch$b <- substr(pitch$count, 1, 1)
 pitch$s <- substr(pitch$count, 3, 3)
 
-#### Create dataset of swings and misses---to be used in 03_model_stuff.R
+#### Create dataset to be used in 03_model_stuff.py
+
+# Remove years for pitchers who had greater than 0 starts
+max.starts <- 0
+starters.dat <- pitch %>%
+  filter(!is.na(sv_id)) %>%
+  group_by(gameday_link) %>%
+  arrange(sv_id) %>%
+  filter(row_number() == 1) %>%
+  dplyr::select(gameday_link, pitcher, year)
+
+starts.year.dat <- starters.dat %>%
+  group_by(pitcher, year) %>%
+  summarise(n_starts = n()) %>%
+  filter(n_starts > max.starts)
+
+pitch.split <- split(pitch, pitch$year)
+pitcher.exclude.split <- split(starts.year.dat, starts.year.dat$year)
+pitch.split <- lapply(1:length(studied.years), function(i){
+  exclude.vec <- pitcher.exclude.split[[i]]$pitcher
+  pitch.split[[i]] %>%
+    filter(!(pitcher %in% exclude.vec))
+})
+
+pitch <- do.call(rbind, pitch.split)
+rm(list=setdiff(ls(), "pitch"))
 
 # Find fastest average pitch for each pitcher in a given year
 fastest.pitch.dat <- pitch %>%
@@ -91,30 +116,7 @@ save(pitch.swing, file = "Data/Swings.Rdata")
 
 ####### Extract only relievers from the data
 
-# Remove years for pitchers who had greater than 0 starts
-max.starts <- 0
-starters.dat <- pitch %>%
-  filter(!is.na(sv_id)) %>%
-  group_by(gameday_link) %>%
-  arrange(sv_id) %>%
-  filter(row_number() == 1) %>%
-  dplyr::select(gameday_link, pitcher, year)
 
-starts.year.dat <- starters.dat %>%
-  group_by(pitcher, year) %>%
-  summarise(n_starts = n()) %>%
-  filter(n_starts > max.starts)
-
-pitch.split <- split(pitch, pitch$year)
-pitcher.exclude.split <- split(starts.year.dat, starts.year.dat$year)
-pitch.split <- lapply(1:length(studied.years), function(i){
-  exclude.vec <- pitcher.exclude.split[[i]]$pitcher
-  pitch.split[[i]] %>%
-    filter(!(pitcher %in% exclude.vec))
-})
-
-pitch.relief.all <- do.call(rbind, pitch.split)
-rm(list=setdiff(ls(), "pitch.relief.all"))
 
 
 # TODO (Jake) Take the dataset pitch.relief.all and get npitch1:npitch7 for each pitcher 
@@ -137,7 +139,7 @@ valid.pitcher <- pitch.relief.all %>%
   group_by(pitcher,year) %>%
   summarise(tot.pitches = n()) %>%
   filter(tot.pitches >= kPitchCutoff) %>%
-  select(-tot.pitches) %>%
+  dplyr::select(-tot.pitches) %>%
   inner_join(player.game)
 
 
