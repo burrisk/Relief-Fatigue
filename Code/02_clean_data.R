@@ -162,7 +162,7 @@ bunt.events <- c("Bunt Lineout", "Bunt Popout", "Bunt Groundout", "Sac Bunt",
 
 pitch.swing <- pitch %>%
   filter(swinging == 1) %>%
-  filter(!(des %in% inplay & event %in% bunt.events)) %>%
+  filter(!(des %in% inplay & event %in% bunt.events))
 
 # Dataset with only full swings- used to model whiff rates
 write.csv(pitch.swing,file = "Data/pitch_swing.csv")
