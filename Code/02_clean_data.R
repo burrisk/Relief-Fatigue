@@ -137,7 +137,10 @@ fastest.pitch.dat <- pitch %>%
   dplyr::select(-pitch_type)
 
 pitch <- inner_join(pitch, fastest.pitch.dat, by = 
-                                 c("pitcher", "year"))
+                                 c("pitcher", "year")) %>%
+  mutate(diff_speed = start_speed - avg_fast_speed) %>%
+  mutate(pitch_type = ifelse(pitch_type=="KC","CU",pitch_type))#Combine KC and CU
+  
 
 # Create Swing and Whiff Indicators
 swinging <- c("In play, no out", "Foul", "In play, run(s)", "Swinging Strike", 'Foul Tip',
@@ -160,8 +163,6 @@ bunt.events <- c("Bunt Lineout", "Bunt Popout", "Bunt Groundout", "Sac Bunt",
 pitch.swing <- pitch %>%
   filter(swinging == 1) %>%
   filter(!(des %in% inplay & event %in% bunt.events)) %>%
-  mutate(diff_speed = start_speed - avg_fast_speed) %>%
-  mutate(pitch_type = ifelse(pitch_type=="KC","CU",pitch_type))#Combine KC and CU
 
 # Dataset with only full swings- used to model whiff rates
 write.csv(pitch.swing,file = "Data/pitch_swing.csv")
