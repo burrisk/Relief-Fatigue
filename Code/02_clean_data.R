@@ -106,8 +106,8 @@ for(i in 1:nrow(valid.pitcher)){
   }
 }
 
-relief.lookback <- as.data.frame(cbind(valid.pitcher,npitch)) %>%
-  select(-num.date)
+relief.lookback <- as.data.frame(cbind(as.matrix(valid.pitcher),npitch)) %>%
+  dplyr::select(-num.date)
 
 rm(valid.pitcher,npitch,player.game,d,i,index,j)
 
@@ -121,7 +121,7 @@ rel_freq <- pitch %>%
   mutate(freq = n/sum(n)) %>%
   filter(freq > 0.10) %>%
   filter(!(pitch_type %in% c("SC","KN","FO"))) %>%
-  select(pitcher, year, pitch_type)
+  dplyr::select(pitcher, year, pitch_type)
 
 rel_freq <- apply(rel_freq,1,paste,collapse = "")
 pitch_filter <- apply(pitch[, c("pitcher","year","pitch_type")],1,paste,collapse = "")
@@ -152,22 +152,20 @@ pitch$whiff <- as.numeric(pitch$des %in% whiff)
 save(pitch, file = "Data/AllStandardPitches.Rdata")
 
 
-
-pitch.swing <- pitch %>%
-  filter(swinging == 1)
-
 # Remove In-Play Bunts
 inplay <- c("In play, no out", "In play, run(s)")
 bunt.events <- c("Bunt Lineout", "Bunt Popout", "Bunt Groundout", "Sac Bunt",
                  "Sacrifice Bunt DP")
-pitch.swing <- pitch.swing %>%
-  filter(!(des %in% inplay & event %in% bunt.events))
+
+pitch.swing <- pitch %>%
+  filter(swinging == 1) %>%
+  filter(!(des %in% inplay & event %in% bunt.events)) %>%
+  mutate(diff_speed = start_speed - avg_fast_speed) %>%
+  mutate(pitch_type = ifelse(pitch_type=="KC","CU",pitch_type))#Combine KC and CU
 
 # Dataset with only full swings- used to model whiff rates
 save(pitch.swing, file = "Data/Swings.Rdata")
-
-
-
+write.csv(pitch.swing,file = "Data/pitch_swing.csv")
 
 
 
