@@ -149,7 +149,7 @@ pitch$whiff <- as.numeric(pitch$des %in% whiff)
 
 
 # This is the dataset where we estimate nastiness of each pitch
-save(pitch, file = "Data/AllStandardPitches.Rdata")
+write.csv(pitch, file = "Data/AllStandardPitches.csv")
 
 
 # Remove In-Play Bunts
@@ -164,7 +164,6 @@ pitch.swing <- pitch %>%
   mutate(pitch_type = ifelse(pitch_type=="KC","CU",pitch_type))#Combine KC and CU
 
 # Dataset with only full swings- used to model whiff rates
-save(pitch.swing, file = "Data/Swings.Rdata")
 write.csv(pitch.swing,file = "Data/pitch_swing.csv")
 
 
