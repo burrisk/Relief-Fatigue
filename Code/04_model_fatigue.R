@@ -52,7 +52,8 @@ npitch_all <- inner_join(avg_stuff_all, relief.lookback, by = c("gameday_link","
 #Individual Pitches
 avg_stuff_indpitch <- pitch %>%
   group_by(gameday_link, pitcher, pitcher_name, pitch_type) %>%
-  summarise(mean_stuff = mean(spin_rate), num.pitches = n()) %>%
+  summarise(mean_stuff = mean(z_stuff), mean_spin = mean(spin_rate),
+            mean_velo = mean(start_speed), num.pitches = n()) %>%
   filter(num.pitches >= 3) %>%
   select(-num.pitches) %>%
   arrange(desc(mean_stuff))
@@ -103,15 +104,16 @@ npitch_fast <- avg_stuff_indpitch %>%
   inner_join(relief.lookback)
 
 # Frequentist Model
-lmer1 <- lmer(mean_stuff ~ (1|pitcher) + npitch1 + npitch2 + npitch3 + npitch4 + npitch5, 
-              data = npitch_ff)
+library(lme4)
+lmer1 <- lmer(as.numeric(scale(mean_spin)) ~ (1|pitcher) + npitch1 + npitch2 + npitch3, 
+              data = npitch_cu)
 summary(lmer1)
 
 
 # JAGS Model
 
-runJAGSmodel <- function(pitch, n.iter = 5000, n.thin = 1){
-  mod.data <- list(Y = pitch$mean_stuff,
+runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
+  mod.data <- list(Y = as.numeric(scale(unlist(pitch[,y]))),
                    X1 = pitch$npitch1,
                    X2 = pitch$npitch2,
                    X3 = pitch$npitch3,
@@ -124,42 +126,56 @@ runJAGSmodel <- function(pitch, n.iter = 5000, n.thin = 1){
                    n.pitcher = length(unique(pitch$pitcher))
   )
   
+  
   pitch_model <- function(){
     for(i in 1:n){
-      mu[i] <- alpha[pitcher[i]] + beta * (gamma*X1[i] + gamma^2*X2[i] + 
-                                             gamma^3*X3[i])
+      mu[i] <- alpha[pitcher[i]] + beta[pitcher[i]]*(gamma[pitcher[i]]*X1[i] + gamma[pitcher[i]]^2*X2[i] + 
+                                                       gamma[pitcher[i]]^3*X3[i])# + gamma[pitcher[i]]^4*X4[i] + gamma[pitcher[i]]^5*X5[i])# + 
+      #gamma^6*X6[i] + gamma^7*X7[i]
       Y[i] ~ dnorm(mu[i], tau)
     }
     
     tau ~ dgamma(.1,.1)
-    gamma ~ dnorm(0,phi.g)
-    beta ~ dnorm(0,phi.b)
     
     sd.a ~ dt(0,.1,1)%_%T(0,)
     phi.a <- sd.a^(-2)
     
-    sd.b ~ dt(0,.1,1)%_%T(0,)
+    sd.b ~dt(0,0.1,1)%_%T(0,)
     phi.b <- sd.b^(-2)
+    
+    
     sd.g ~ dt(0,.1,1)%_%T(0,)
     phi.g <- sd.g^(-2)
+    
+    mu.g ~ dnorm(0,4)
+    mu.b ~ dnorm(0,10)
+    
+    
     for(p in 1:n.pitcher){
       alpha[p] ~ dnorm(0,phi.a)
+      beta[p] ~ dnorm(mu.b,phi.b)
+      gamma[p] ~ dnorm(mu.g,phi.g)
+      
     }
   }
   
   # Create a function that provides intial values for WinBUGS
   pitch.inits = function() {
     alpha <- rep(0, mod.data$n.pitcher)
-    gamma <- 0
-    beta <- 0
-    sd.b <- 1
+    gamma <- rep(0, mod.data$n.pitcher)
+    beta <- rep(0, mod.data$n.pitcher)
+    sd.b <- .1
     sd.a <- 1
     sd.g <- 1
-    return(list(alpha=alpha, gamma=gamma, beta = beta, sd.b = sd.b,
-                sd.a = sd.a, sd.g = sd.g))
+    mu.b <- -0.005
+    mu.g <- 0.5
+    return(list(alpha=alpha, gamma=gamma,
+                sd.a = sd.a, sd.g = sd.g, mu.g=mu.g,mu.b=mu.b))
   }
   
-  parameters = c("alpha","gamma","sd.a", "sd.g","beta","sd.b")
+  
+  parameters = c("alpha","gamma","sd.a", "sd.g","beta", "sd.b", "mu.g","mu.b")
+  
   
   pitch.model.file = paste(getwd(),"Output","pitch-model.txt", sep="/")
   write.model(pitch_model, pitch.model.file)
@@ -172,4 +188,73 @@ runJAGSmodel <- function(pitch, n.iter = 5000, n.thin = 1){
   pitch.bugs
 }
 
-splitter_mod <- runJAGSmodel(npitch_fs)
+velo_model <- runJAGSmodel(npitch_ff, y = "mean_velo")
+
+n.pitcher.ff <- length(unique(npitch_ff$pitcher))
+
+#Get output into matrices
+alpha.ff.mat <- gamma.ff.mat <- beta.ff.mat <- matrix(numeric(3000*n.pitcher.ff),ncol = n.pitcher.ff)
+for(p in 1:n.pitcher.ff){
+  gamma.ff.mat[,p] <- as.numeric(velo_model[,paste0("gamma[",p,"]")])
+  alpha.ff.mat[,p] <- as.numeric(velo_model[,paste0("alpha[",p,"]")])
+  beta.ff.mat[,p] <- as.numeric(velo_model[,paste0("beta[",p,"]")])
+}
+
+#Examine posterior means
+plot(apply(alpha.ff.mat,2,mean), xlab = "Reliever", 
+     ylab = "Alpha Value", main = "Overall Stuff Intercept",
+     pch = 19, cex = .7)
+
+plot(apply(gamma.ff.mat,2,mean), xlab = "Reliever", 
+     ylab = "Phi Value", main = "Effectiveness Decay",
+     pch = 19, cex = .7)
+
+plot(apply(beta.ff.mat,2,mean), xlab = "Reliever", 
+     ylab = "Beta Value", main = "Baseline Effectiveness Decay",
+     pch = 19, cex = .7)
+
+alpha.ff.mean <- apply(alpha.ff.mat,2,mean)
+beta.ff.mean <- apply(beta.ff.mat,2,mean)
+gamma.ff.mean <- apply(gamma.ff.mat,2,mean)
+
+ff.dset <- as.data.frame(cbind(as.numeric(levels(as.factor(npitch_ff$pitcher))), 
+                               alpha.ff.mean, beta.ff.mean, gamma.ff.mean)) %>%
+  arrange(desc(alpha.ff.mean))
+colnames(ff.dset)[1] <- "pitcher"
+
+
+spin_model <- runJAGSmodel(npitch_cu, y = "mean_spin")
+
+n.pitcher.cu <- length(unique(npitch_cu$pitcher))
+
+#Get output into matrices
+alpha.cu.mat <- gamma.cu.mat <- beta.cu.mat <- matrix(numeric(3000*n.pitcher.cu),ncol = n.pitcher.cu)
+for(p in 1:n.pitcher.cu){
+  gamma.cu.mat[,p] <- as.numeric(spin_model[,paste0("gamma[",p,"]")])
+  alpha.cu.mat[,p] <- as.numeric(spin_model[,paste0("alpha[",p,"]")])
+  beta.cu.mat[,p] <- as.numeric(spin_model[,paste0("beta[",p,"]")])
+}
+
+#Examine posterior means
+plot(apply(alpha.cu.mat,2,mean), xlab = "Reliever", 
+     ylab = "Alpha Value", main = "Overall Stuff Intercept",
+     pch = 19, cex = .7)
+
+plot(apply(gamma.cu.mat,2,mean), xlab = "Reliever", 
+     ylab = "Phi Value", main = "Effectiveness Decay",
+     pch = 19, cex = .7)
+
+plot(apply(beta.cu.mat,2,mean), xlab = "Reliever", 
+     ylab = "Beta Value", main = "Baseline Effectiveness Decay",
+     pch = 19, cex = .7)
+
+alpha.cu.mean <- apply(alpha.cu.mat,2,mean)
+beta.cu.mean <- apply(beta.cu.mat,2,mean)
+gamma.cu.mean <- apply(gamma.cu.mat,2,mean)
+
+cu.dset <- as.data.frame(cbind(as.numeric(levels(as.factor(npitch_cu$pitcher))), 
+                               alpha.cu.mean, beta.cu.mean, gamma.cu.mean)) %>%
+  arrange(desc(alpha.cu.mean))
+colnames(cu.dset)[1] <- "pitcher"
+
+fatigue.dset <- inner_join(ff.dset, cu.dset, by = "pitcher")
