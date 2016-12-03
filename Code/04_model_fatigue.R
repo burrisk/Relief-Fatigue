@@ -53,7 +53,8 @@ npitch_all <- inner_join(avg_stuff_all, relief.lookback, by = c("gameday_link","
 avg_stuff_indpitch <- pitch %>%
   group_by(gameday_link, pitcher, pitcher_name, pitch_type) %>%
   summarise(mean_stuff = mean(z_stuff), mean_spin = mean(spin_rate),
-            mean_velo = mean(start_speed), num.pitches = n()) %>%
+            mean_velo = mean(start_speed), mean_vz0 = mean(vz0), 
+            num.pitches = n()) %>%
   filter(num.pitches >= 3) %>%
   select(-num.pitches) %>%
   arrange(desc(mean_stuff))
@@ -105,8 +106,8 @@ npitch_fast <- avg_stuff_indpitch %>%
 
 # Frequentist Model
 library(lme4)
-lmer1 <- lmer(as.numeric(scale(mean_spin)) ~ (1|pitcher) + npitch1 + npitch2 + npitch3, 
-              data = npitch_cu)
+lmer1 <- lmer(mean_stuff ~ (1|pitcher) + npitch1 + npitch2 + npitch3, 
+              data = npitch_sl)
 summary(lmer1)
 
 
@@ -188,10 +189,9 @@ runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
   pitch.bugs
 }
 
-velo_model <- runJAGSmodel(npitch_ff, y = "mean_velo")
+velo_model <- runJAGSmodel(npitch_ff, y = "mean_stuff")
 
-n.pitcher.ff <- length(unique(npitch_ff$pitcher))
-
+(n.pitcher.ff <- length(unique(npitch_ff$pitcher)))
 #Get output into matrices
 alpha.ff.mat <- gamma.ff.mat <- beta.ff.mat <- matrix(numeric(3000*n.pitcher.ff),ncol = n.pitcher.ff)
 for(p in 1:n.pitcher.ff){
@@ -201,9 +201,26 @@ for(p in 1:n.pitcher.ff){
 }
 
 #Examine posterior means
-plot(apply(alpha.ff.mat,2,mean), xlab = "Reliever", 
+library(ggplot2)
+alpha.ff.mean <- apply(alpha.ff.mat,2,mean)
+alpha.ff.df <- data.frame(cbind(1:n.pitcher.ff), alpha.ff.mean)
+colnames(alpha.ff.df) <- c("pitcher", "mean")
+alpha.quantiles <- quantile(alpha.ff.mean, c(0.025, 0.975))
+ggplot(alpha.ff.df, mapping = aes(x = pitcher, y = mean)) + 
+  geom_point() + 
+  geom_hline(yintercept = mean(alpha.ff.mean), color = "red", lwd = 2) + 
+  geom_hline(yintercept = alpha.quantiles, color = "blue", lwd = 2, lty = 2) +
+  theme(text = element_text(size=15, face = "bold")) +
+  xlab("Reliever") +
+  ylab(expression(alpha[i])) + 
+  ggtitle("Pitch Quality Intercepts")
+
+plot(alpha.ff.mean, xlab = "Reliever", 
      ylab = "Alpha Value", main = "Overall Stuff Intercept",
      pch = 19, cex = .7)
+abline(h = mean(alpha.ff.mean), col = "red", lwd = 2)
+abline(h = alpha.quantiles, col = "blue", lty = 2, lwd = 2)
+
 
 plot(apply(gamma.ff.mat,2,mean), xlab = "Reliever", 
      ylab = "Phi Value", main = "Effectiveness Decay",
@@ -222,39 +239,3 @@ ff.dset <- as.data.frame(cbind(as.numeric(levels(as.factor(npitch_ff$pitcher))),
   arrange(desc(alpha.ff.mean))
 colnames(ff.dset)[1] <- "pitcher"
 
-
-spin_model <- runJAGSmodel(npitch_cu, y = "mean_spin")
-
-n.pitcher.cu <- length(unique(npitch_cu$pitcher))
-
-#Get output into matrices
-alpha.cu.mat <- gamma.cu.mat <- beta.cu.mat <- matrix(numeric(3000*n.pitcher.cu),ncol = n.pitcher.cu)
-for(p in 1:n.pitcher.cu){
-  gamma.cu.mat[,p] <- as.numeric(spin_model[,paste0("gamma[",p,"]")])
-  alpha.cu.mat[,p] <- as.numeric(spin_model[,paste0("alpha[",p,"]")])
-  beta.cu.mat[,p] <- as.numeric(spin_model[,paste0("beta[",p,"]")])
-}
-
-#Examine posterior means
-plot(apply(alpha.cu.mat,2,mean), xlab = "Reliever", 
-     ylab = "Alpha Value", main = "Overall Stuff Intercept",
-     pch = 19, cex = .7)
-
-plot(apply(gamma.cu.mat,2,mean), xlab = "Reliever", 
-     ylab = "Phi Value", main = "Effectiveness Decay",
-     pch = 19, cex = .7)
-
-plot(apply(beta.cu.mat,2,mean), xlab = "Reliever", 
-     ylab = "Beta Value", main = "Baseline Effectiveness Decay",
-     pch = 19, cex = .7)
-
-alpha.cu.mean <- apply(alpha.cu.mat,2,mean)
-beta.cu.mean <- apply(beta.cu.mat,2,mean)
-gamma.cu.mean <- apply(gamma.cu.mat,2,mean)
-
-cu.dset <- as.data.frame(cbind(as.numeric(levels(as.factor(npitch_cu$pitcher))), 
-                               alpha.cu.mean, beta.cu.mean, gamma.cu.mean)) %>%
-  arrange(desc(alpha.cu.mean))
-colnames(cu.dset)[1] <- "pitcher"
-
-fatigue.dset <- inner_join(ff.dset, cu.dset, by = "pitcher")
