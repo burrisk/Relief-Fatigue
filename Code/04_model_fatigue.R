@@ -130,8 +130,11 @@ runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
   
   pitch_model <- function(){
     for(i in 1:n){
-      mu[i] <- alpha[pitcher[i]] + beta[pitcher[i]]*(gamma[pitcher[i]]*X1[i] + gamma[pitcher[i]]^2*X2[i] + 
-                                                       gamma[pitcher[i]]^3*X3[i])# + gamma[pitcher[i]]^4*X4[i] + gamma[pitcher[i]]^5*X5[i])# + 
+      #mu[i] <- alpha[pitcher[i]] + beta[pitcher[i]]*(gamma[pitcher[i]]*X1[i] + gamma[pitcher[i]]^2*X2[i] + 
+       #                                                gamma[pitcher[i]]^3*X3[i])# + gamma[pitcher[i]]^4*X4[i] + gamma[pitcher[i]]^5*X5[i])# + 
+      #gamma^6*X6[i] + gamma^7*X7[i]
+      mu[i] <- alpha[pitcher[i]] + beta[pitcher[i]]*(gamma*X1[i] + gamma^2*X2[i] + 
+                                                      gamma^3*X3[i])# + gamma[pitcher[i]]^4*X4[i] + gamma[pitcher[i]]^5*X5[i])# + 
       #gamma^6*X6[i] + gamma^7*X7[i]
       Y[i] ~ dnorm(mu[i], tau)
     }
@@ -148,14 +151,15 @@ runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
     sd.g ~ dt(0,.1,1)%_%T(0,)
     phi.g <- sd.g^(-2)
     
-    mu.g ~ dnorm(0,4)
+    #mu.g ~ dnorm(0,4)
+    gamma ~ dgamma(0.1,1)
     mu.b ~ dnorm(0,10)
     
     
     for(p in 1:n.pitcher){
       alpha[p] ~ dnorm(0,phi.a)
       beta[p] ~ dnorm(mu.b,phi.b)
-      gamma[p] ~ dnorm(mu.g,phi.g)
+      #gamma[p] ~ dnorm(mu.g,phi.g)
       
     }
   }
@@ -163,19 +167,20 @@ runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
   # Create a function that provides intial values for WinBUGS
   pitch.inits = function() {
     alpha <- rep(0, mod.data$n.pitcher)
-    gamma <- rep(0, mod.data$n.pitcher)
+    #gamma <- rep(0, mod.data$n.pitcher)
     beta <- rep(0, mod.data$n.pitcher)
     sd.b <- .1
     sd.a <- 1
     sd.g <- 1
     mu.b <- -0.005
-    mu.g <- 0.5
+    #mu.g <- 0.5
+    gamma = 0.2
     return(list(alpha=alpha, gamma=gamma,
-                sd.a = sd.a, sd.g = sd.g, mu.g=mu.g,mu.b=mu.b))
+                sd.a = sd.a, sd.g = sd.g,mu.b=mu.b))
   }
   
   
-  parameters = c("alpha","gamma","sd.a", "sd.g","beta", "sd.b", "mu.g","mu.b")
+  parameters = c("alpha","gamma","sd.a", "sd.g","beta", "sd.b","mu.b")
   
   
   pitch.model.file = paste(getwd(),"Output","pitch-model.txt", sep="/")
@@ -189,53 +194,127 @@ runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
   pitch.bugs
 }
 
-velo_model <- runJAGSmodel(npitch_ff, y = "mean_stuff")
 
-(n.pitcher.ff <- length(unique(npitch_ff$pitcher)))
-#Get output into matrices
-alpha.ff.mat <- gamma.ff.mat <- beta.ff.mat <- matrix(numeric(3000*n.pitcher.ff),ncol = n.pitcher.ff)
-for(p in 1:n.pitcher.ff){
-  gamma.ff.mat[,p] <- as.numeric(velo_model[,paste0("gamma[",p,"]")])
-  alpha.ff.mat[,p] <- as.numeric(velo_model[,paste0("alpha[",p,"]")])
-  beta.ff.mat[,p] <- as.numeric(velo_model[,paste0("beta[",p,"]")])
+makeCoolPlots <- function(dataset, y){
+  velo_model <- runJAGSmodel(dataset, y = y)
+  
+  (n.pitcher.ff <- length(unique(dataset$pitcher)))
+  #Get output into matrices
+  alpha.ff.mat <- gamma.ff.mat <- beta.ff.mat <- matrix(numeric(3000*n.pitcher.ff),ncol = n.pitcher.ff)
+  for(p in 1:n.pitcher.ff){
+    #gamma.ff.mat[,p] <- as.numeric(velo_model[,paste0("gamma[",p,"]")])
+    alpha.ff.mat[,p] <- as.numeric(velo_model[,paste0("alpha[",p,"]")])
+    beta.ff.mat[,p] <- as.numeric(velo_model[,paste0("beta[",p,"]")])
+  }
+  
+  #Examine posterior means
+  library(ggplot2)
+  alpha.ff.mean <- apply(alpha.ff.mat,2,mean)
+  alpha.ff.df <- data.frame(cbind(1:n.pitcher.ff), alpha.ff.mean)
+  colnames(alpha.ff.df) <- c("pitcher", "mean")
+  alpha.quantiles <- quantile(alpha.ff.mean, c(0.025, 0.975))
+  line.df = data.frame(cbind(factor(c("m","v","v")), c(mean(alpha.ff.mean), alpha.quantiles)))
+  colnames(line.df) = c("component", "value")
+  rownames(line.df) = NULL
+  line.df$component = factor(line.df$component)
+  ggplot(alpha.ff.df, mapping = aes(x = pitcher, y = mean)) + 
+    geom_point() + 
+    geom_hline(data = line.df, aes(yintercept = value, linetype = component, colour = component), 
+               lwd = 2) +
+    theme(text = element_text(size=20, face = "bold")) +
+    xlab("Reliever") +
+    ylab(expression(alpha[i])) + 
+    ggtitle("Pitch Quality Intercepts") +
+    scale_colour_discrete(name="",
+                          labels=c("Mean", "95% CI")) + 
+    scale_linetype_discrete(name="",
+                            labels=c("Mean", "95% CI"))
+  
+  filename = paste("Output/", paste(deparse(substitute(dataset)), y, "alpha.png", 
+                                    sep = "_"), sep = "")
+  
+  ggsave(filename, width = 8, height = 5)
+  
+  
+  beta.ff.mean <- apply(beta.ff.mat,2,mean)
+  beta.ff.df <- data.frame(cbind(1:n.pitcher.ff), beta.ff.mean)
+  colnames(beta.ff.df) <- c("pitcher", "mean")
+  beta.quantiles <- quantile(beta.ff.mean, c(0.025, 0.975))
+  line.df = data.frame(cbind(factor(c("m","v","v")), c(mean(beta.ff.mean), beta.quantiles)))
+  colnames(line.df) = c("component", "value")
+  rownames(line.df) = NULL
+  line.df$component = factor(line.df$component)
+  ggplot(beta.ff.df, mapping = aes(x = pitcher, y = mean)) + 
+    geom_point() + 
+    geom_hline(data = line.df, aes(yintercept = value, linetype = component, colour = component), 
+               lwd = 2) +
+    theme(text = element_text(size=20, face = "bold")) +
+    xlab("Reliever") +
+    ylab(expression(beta[i])) + 
+    ggtitle("Fatigue Effect Coefficients") +
+    scale_colour_discrete(name="",
+                          labels=c("Mean", "95% CI")) + 
+    scale_linetype_discrete(name="",
+                            labels=c("Mean", "95% CI"))
+  
+  filename = paste("Output/", paste(deparse(substitute(dataset)), y, "beta.png", 
+                                    sep = "_"), sep = "")
+  
+  ggsave(filename, width = 8, height = 5)
+  
+#   gamma.ff.mean <- apply(gamma.ff.mat,2,mean)
+#   gamma.ff.df <- data.frame(cbind(1:n.pitcher.ff), gamma.ff.mean)
+#   colnames(gamma.ff.df) <- c("pitcher", "mean")
+#   gamma.quantiles <- quantile(gamma.ff.mean, c(0.025, 0.975))
+#   line.df = data.frame(cbind(factor(c("m","v","v")), c(mean(gamma.ff.mean), gamma.quantiles)))
+#   colnames(line.df) = c("component", "value")
+#   rownames(line.df) = NULL
+#   line.df$component = factor(line.df$component)
+#   ggplot(gamma.ff.df, mapping = aes(x = pitcher, y = mean)) + 
+#     geom_point() + 
+#     geom_hline(data = line.df, aes(yintercept = value, linetype = component, colour = component), 
+#                lwd = 2) +
+#     theme(text = element_text(size=20, face = "bold")) +
+#     xlab("Reliever") +
+#     ylab(expression(phi[i])) + 
+#     ggtitle("Recovery Rate Coefficients") +
+#     scale_colour_discrete(name="",
+#                           labels=c("Mean", "95% CI")) + 
+#     scale_linetype_discrete(name="",
+#                             labels=c("Mean", "95% CI"))
+#   filename = paste("Output/", paste(deparse(substitute(dataset)), y, "phi.png", 
+#                                     sep = "_"), sep = "")
+#   
+#   ggsave(filename, width = 8, height = 5)
+  return(velo_model)
 }
 
-#Examine posterior means
-library(ggplot2)
-alpha.ff.mean <- apply(alpha.ff.mat,2,mean)
-alpha.ff.df <- data.frame(cbind(1:n.pitcher.ff), alpha.ff.mean)
-colnames(alpha.ff.df) <- c("pitcher", "mean")
-alpha.quantiles <- quantile(alpha.ff.mean, c(0.025, 0.975))
-ggplot(alpha.ff.df, mapping = aes(x = pitcher, y = mean)) + 
-  geom_point() + 
-  geom_hline(yintercept = mean(alpha.ff.mean), color = "red", lwd = 2) + 
-  geom_hline(yintercept = alpha.quantiles, color = "blue", lwd = 2, lty = 2) +
-  theme(text = element_text(size=15, face = "bold")) +
-  xlab("Reliever") +
-  ylab(expression(alpha[i])) + 
-  ggtitle("Pitch Quality Intercepts")
 
-plot(alpha.ff.mean, xlab = "Reliever", 
-     ylab = "Alpha Value", main = "Overall Stuff Intercept",
-     pch = 19, cex = .7)
-abline(h = mean(alpha.ff.mean), col = "red", lwd = 2)
-abline(h = alpha.quantiles, col = "blue", lty = 2, lwd = 2)
+makeCoolPlots(npitch_ff, "mean_stuff")
+makeCoolPlots(npitch_ft, "mean_stuff")
+makeCoolPlots(npitch_fc, "mean_stuff")
+makeCoolPlots(npitch_fs, "mean_stuff")
+makeCoolPlots(npitch_ch, "mean_stuff")
+makeCoolPlots(npitch_si, "mean_stuff")
+makeCoolPlots(npitch_sl, "mean_stuff")
+makeCoolPlots(npitch_cu, "mean_stuff")
+makeCoolPlots(npitch_ff, "mean_velo")
+makeCoolPlots(npitch_ft, "mean_velo")
+makeCoolPlots(npitch_fc, "mean_velo")
+makeCoolPlots(npitch_fs, "mean_velo")
+makeCoolPlots(npitch_ch, "mean_velo")
+makeCoolPlots(npitch_si, "mean_velo")
+makeCoolPlots(npitch_sl, "mean_velo")
+makeCoolPlots(npitch_cu, "mean_velo")
+spin_model = makeCoolPlots(npitch_cu, "mean_spin")
+
+ft_model = runJAGSmodel(npitch_ft, "mean_stuff")
+means = apply(ft_model[,117:232],2,mean)
+which.min(means)
+which.max(means)
+mean(ft_model[,"beta[45]"] > ft_model[,"beta[48]"])
 
 
-plot(apply(gamma.ff.mat,2,mean), xlab = "Reliever", 
-     ylab = "Phi Value", main = "Effectiveness Decay",
-     pch = 19, cex = .7)
 
-plot(apply(beta.ff.mat,2,mean), xlab = "Reliever", 
-     ylab = "Beta Value", main = "Baseline Effectiveness Decay",
-     pch = 19, cex = .7)
 
-alpha.ff.mean <- apply(alpha.ff.mat,2,mean)
-beta.ff.mean <- apply(beta.ff.mat,2,mean)
-gamma.ff.mean <- apply(gamma.ff.mat,2,mean)
-
-ff.dset <- as.data.frame(cbind(as.numeric(levels(as.factor(npitch_ff$pitcher))), 
-                               alpha.ff.mean, beta.ff.mean, gamma.ff.mean)) %>%
-  arrange(desc(alpha.ff.mean))
-colnames(ff.dset)[1] <- "pitcher"
 
