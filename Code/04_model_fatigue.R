@@ -133,8 +133,8 @@ runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
       #mu[i] <- alpha[pitcher[i]] + beta[pitcher[i]]*(gamma[pitcher[i]]*X1[i] + gamma[pitcher[i]]^2*X2[i] + 
        #                                                gamma[pitcher[i]]^3*X3[i])# + gamma[pitcher[i]]^4*X4[i] + gamma[pitcher[i]]^5*X5[i])# + 
       #gamma^6*X6[i] + gamma^7*X7[i]
-      mu[i] <- alpha[pitcher[i]] + beta[pitcher[i]]*(gamma*X1[i] + gamma^2*X2[i] + 
-                                                      gamma^3*X3[i])# + gamma[pitcher[i]]^4*X4[i] + gamma[pitcher[i]]^5*X5[i])# + 
+      mu[i] <- alpha[pitcher[i]] + beta[pitcher[i]]*(X1[i] + gamma*X2[i] + 
+                                                      gamma^2*X3[i])# + gamma[pitcher[i]]^4*X4[i] + gamma[pitcher[i]]^5*X5[i])# + 
       #gamma^6*X6[i] + gamma^7*X7[i]
       Y[i] ~ dnorm(mu[i], tau)
     }
@@ -148,11 +148,12 @@ runJAGSmodel <- function(pitch, y, n.iter = 2000, n.thin = 1){
     phi.b <- sd.b^(-2)
     
     
-    sd.g ~ dt(0,.1,1)%_%T(0,)
-    phi.g <- sd.g^(-2)
+#     sd.g ~ dt(0,.1,1)%_%T(0,)
+#     phi.g <- sd.g^(-2)
     
     #mu.g ~ dnorm(0,4)
-    gamma ~ dgamma(0.1,1)
+    gamma ~ dt(0,.1,1)%_%T(0,)
+    #gamma ~ dgamma(0.1,1)
     mu.b ~ dnorm(0,10)
     
     
@@ -290,31 +291,13 @@ makeCoolPlots <- function(dataset, y){
 }
 
 
-makeCoolPlots(npitch_ff, "mean_stuff")
-makeCoolPlots(npitch_ft, "mean_stuff")
-makeCoolPlots(npitch_fc, "mean_stuff")
-makeCoolPlots(npitch_fs, "mean_stuff")
-makeCoolPlots(npitch_ch, "mean_stuff")
-makeCoolPlots(npitch_si, "mean_stuff")
-makeCoolPlots(npitch_sl, "mean_stuff")
-makeCoolPlots(npitch_cu, "mean_stuff")
-makeCoolPlots(npitch_ff, "mean_velo")
-makeCoolPlots(npitch_ft, "mean_velo")
-makeCoolPlots(npitch_fc, "mean_velo")
-makeCoolPlots(npitch_fs, "mean_velo")
-makeCoolPlots(npitch_ch, "mean_velo")
-makeCoolPlots(npitch_si, "mean_velo")
-makeCoolPlots(npitch_sl, "mean_velo")
-makeCoolPlots(npitch_cu, "mean_velo")
-spin_model = makeCoolPlots(npitch_cu, "mean_spin")
+ff_stuff <- makeCoolPlots(npitch_ff, "mean_stuff")
+ft_stuff <- makeCoolPlots(npitch_ft, "mean_stuff")
+ff_velo <- makeCoolPlots(npitch_ff, "mean_velo")
+ft_velo <- makeCoolPlots(npitch_ft, "mean_velo")
+cu_spin <- makeCoolPlots(npitch_cu, "mean_spin")
 
-ft_model = runJAGSmodel(npitch_ft, "mean_stuff")
-means = apply(ft_model[,117:232],2,mean)
-which.min(means)
-which.max(means)
-mean(ft_model[,"beta[45]"] > ft_model[,"beta[48]"])
-
-
+means_ft_velo <- apply(ft_velo[,117:232], 2, mean)
 
 
 
