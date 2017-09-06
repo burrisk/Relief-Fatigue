@@ -32,7 +32,7 @@ pitch$post_season <- as.numeric(pitch$date > mlb.schedule[y,"end"])
 pitch$year <- y
 
 # Exclude Spring Training games and Years not in Study
-studied.years <- c(2012:2016)
+studied.years <- c(2014:2016)
 pitch <- pitch %>%
   filter(reg_season + post_season != 0) %>%
   filter(as.numeric(year) %in% studied.years)
@@ -41,106 +41,22 @@ pitch <- pitch %>%
 pitch$b <- substr(pitch$count, 1, 1)
 pitch$s <- substr(pitch$count, 3, 3)
 
-#### Create dataset to be used in 03_model_stuff.py
-
-# Remove years for pitchers who had greater than 0 starts
-max.starts <- 0
-starters.dat <- pitch %>%
-  filter(!is.na(sv_id)) %>%
-  group_by(gameday_link) %>%
-  arrange(sv_id) %>%
-  filter(row_number() == 1) %>%
-  dplyr::select(gameday_link, pitcher, year)
-
-starts.year.dat <- starters.dat %>%
-  group_by(pitcher, year) %>%
-  summarise(n_starts = n()) %>%
-  filter(n_starts > max.starts)
-
-pitch.split <- split(pitch, pitch$year)
-pitcher.exclude.split <- split(starts.year.dat, starts.year.dat$year)
-pitch.split <- lapply(1:length(studied.years), function(i){
-  exclude.vec <- pitcher.exclude.split[[i]]$pitcher
-  pitch.split[[i]] %>%
-    filter(!(pitcher %in% exclude.vec))
-})
-
-pitch <- do.call(rbind, pitch.split)
-rm(list=setdiff(ls(), "pitch"))
-
-
-# Calculate number of pitches thrown in each day
-kSecondsInDay = 24*3600
-kPitchCutoff = 300
-kLookbackDays = 7
-
-#Get a dataset with row for each pitcher/game for num.pitches
-player.game = pitch %>%
-  group_by(date, gameday_link,pitcher, pitcher_name) %>%
-  summarise(num.pitches = n())%>%
-  mutate(num.date = as.numeric(strptime(date, format = "%Y-%m-%d"))/kSecondsInDay,
-         year = substr(date,1,4))
-
-#Only relievers who threw 100 pitches in a given year
-valid.pitcher <- pitch %>%
-  group_by(pitcher,year) %>%
-  summarise(tot.pitches = n()) %>%
-  filter(tot.pitches >= kPitchCutoff) %>%
-  dplyr::select(-tot.pitches) %>%
-  inner_join(player.game)
-
-
-
-#Dataset for num.pitches thrown in last 7 days
-npitch = matrix(0, nrow = nrow(valid.pitcher), ncol = kLookbackDays)
-colnames(npitch) = paste0("npitch",1:kLookbackDays)
-for(i in 1:nrow(valid.pitcher)){
-  for(j in 1:kLookbackDays){
-    index = ifelse((i-j)>0, i-j, NA) 
-    if(!is.na(index) && #is lookback valid
-       (valid.pitcher$pitcher[i] == valid.pitcher$pitcher[(i-j)]) && #same pitcher?
-       (valid.pitcher$num.date[i] - valid.pitcher$num.date[(i-j)] <= kLookbackDays)){ #within a week?
-      d = (valid.pitcher$num.date[i] - valid.pitcher$num.date[i-j]) #which day in late 7
-      npitch[i,d] = valid.pitcher$num.pitches[i-j]
-    }
-  }
-}
-
-relief.lookback <- as.data.frame(cbind(as.matrix(valid.pitcher),npitch)) %>%
-  dplyr::select(-num.date)
-
-rm(valid.pitcher,npitch,player.game,d,i,index,j)
-
-save(relief.lookback, file = "Data/npitch.Rdata")
-
-# Remove pitches in years that aren't a part of a pitcher's normal repertoire
-rel_freq <- pitch %>%
-  group_by(pitcher, year, pitch_type) %>%
-  summarise(n = n()) %>%
-  filter(n > 100) %>% # Remove pitchers that do not throw more than 100 pitches
-  mutate(freq = n/sum(n)) %>%
-  filter(freq > 0.10) %>%
-  filter(!(pitch_type %in% c("SC","KN","FO"))) %>%
-  dplyr::select(pitcher, year, pitch_type)
-
-rel_freq <- apply(rel_freq,1,paste,collapse = "")
-pitch_filter <- apply(pitch[, c("pitcher","year","pitch_type")],1,paste,collapse = "")
-pitch <- pitch[sapply(pitch_filter, function(x){ x %in% rel_freq}), ]
-
-# Find fastest average pitch for each pitcher in a given year
+# Find fastest pitch for each pitcher in a given year
 fastest.pitch.dat <- pitch %>%
   filter(!is.na(start_speed)) %>%
-  group_by(pitcher, year, pitch_type) %>%
+  group_by(pitcher, year, pitch_type, pitcher_name) %>%
+  filter(n() > 50) %>%
   summarise(avg_fast_speed = mean(start_speed)) %>%
   arrange(desc(avg_fast_speed)) %>%
+  ungroup() %>%
+  group_by(pitcher, year, pitcher_name) %>%
   filter(row_number() == 1) %>%
   dplyr::select(-pitch_type)
 
 pitch <- inner_join(pitch, fastest.pitch.dat, by = 
-                                 c("pitcher", "year")) %>%
+                      c("pitcher", "year", "pitcher_name")) %>%
   mutate(diff_speed = start_speed - avg_fast_speed) %>%
   mutate(pitch_type = ifelse(pitch_type=="KC","CU",pitch_type))#Combine KC and CU
-  
 
 # Create Swing and Whiff Indicators
 swinging <- c("In play, no out", "Foul", "In play, run(s)", "Swinging Strike", 'Foul Tip',
@@ -150,10 +66,87 @@ whiff <- c("Swinging Strike", "Swinging Strike (Blocked)")
 pitch$swinging <- as.numeric(pitch$des %in% swinging)
 pitch$whiff <- as.numeric(pitch$des %in% whiff)
 
+### Dataset for Starting Pitchers
+starters.dat <- pitch %>%
+  filter(inning <= 1) 
 
-# This is the dataset where we estimate nastiness of each pitch
-write.csv(pitch, file = "Data/AllStandardPitches.csv")
+starter_games <- starters.dat %>%
+  group_by(gameday_link, pitcher, pitcher_name) %>%
+  summarise(n = n()) %>%
+  dplyr::select(-n)
 
+starters_pitch <- inner_join(pitch, starter_games)
+
+starters_pitch <- starters_pitch %>%
+  group_by(gameday_link, pitcher) %>%
+  filter(sum(is.na(sv_id)) == 0 & sum(sv_id == "") == 0) %>%
+  arrange(sv_id) %>%
+  mutate(prev_pitches = row_number() - 1) %>%
+  ungroup() %>%
+  filter(!(pitch_type %in% c("SC","KN","FO", "EP")))
+
+save(starters_pitch, file = "Data/starters_pitch.Rdata")
+
+### Dataset for Relief Pitchers
+# Remove years for pitchers who threw fewer than 300 ptiches
+kPitchCutoff = 300
+
+relief_pitch <- pitch %>%
+  filter(!(pitcher %in% starters.dat$pitcher)) %>%
+  group_by(pitcher, year) %>%
+  filter(n() >= kPitchCutoff) %>%
+  ungroup() %>%
+  mutate(pitcher = factor(pitcher))
+
+
+# Calculate number of pitches thrown in each day
+kSecondsInDay = 24*3600
+kLookbackDays = 7
+
+
+#Get a dataset with row for each pitcher/game for num.pitches
+player.game = relief_pitch %>%
+  group_by(date, gameday_link,pitcher, pitcher_name) %>%
+  summarise(num.pitches = n())%>%
+  mutate(num.date = as.numeric(strptime(date, format = "%Y-%m-%d"))/kSecondsInDay,
+         year = substr(date,1,4)) %>%
+  arrange(pitcher, num.date)
+
+
+#Dataset for num.pitches thrown in last 7 days
+npitch = matrix(0, nrow = nrow(player.game), ncol = kLookbackDays)
+colnames(npitch) = paste0("npitch",1:kLookbackDays)
+for(i in 1:nrow(player.game)){
+  for(j in 1:kLookbackDays){
+    index = ifelse((i-j)>0, i-j, NA) 
+    if(!is.na(index) && #is lookback valid
+       (player.game$pitcher[i] == player.game$pitcher[(i-j)]) && #same pitcher?
+       (player.game$num.date[i] - player.game$num.date[(i-j)] <= kLookbackDays)){ #within a week?
+      d = (player.game$num.date[i] - player.game$num.date[i-j]) #which day in late 7
+      npitch[i,d] = player.game$num.pitches[i-j]
+    }
+  }
+}
+
+relief_games <- as.data.frame(cbind(as.matrix(player.game),npitch)) %>%
+  dplyr::select(-num.date) %>%
+  ungroup() %>%
+  mutate(pitcher = factor(pitcher), date = as.Date(date))
+
+relief_pitch <- left_join(relief_pitch, relief_games) %>%
+  ungroup() %>%
+  arrange(pitcher, gameday_link) %>%
+  mutate(date = as.Date(date), pitcher = factor(pitcher)) %>%
+  filter(!(pitch_type %in% c("SC","KN","FO", "EP")))
+
+save(relief_games, file = "Data/relief_games.Rdata")
+save(relief_pitch, file = "Data/relief_pitch.Rdata")
+
+### Dataset for Pitch Quality
+
+# Remove uncommon pitcher/pitch type combos
+pitch_quality <- pitch %>%
+  filter(!(pitch_type %in% c("SC","KN","FO", "EP")))
 
 # Remove In-Play Bunts
 inplay <- c("In play, no out", "In play, run(s)")
@@ -166,7 +159,6 @@ pitch.swing <- pitch %>%
 
 # Dataset with only full swings- used to model whiff rates
 write.csv(pitch.swing,file = "Data/pitch_swing.csv")
-
 
 
 
